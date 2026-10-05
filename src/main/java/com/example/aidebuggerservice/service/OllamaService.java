@@ -14,7 +14,6 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.Vector;
 import java.util.stream.Collectors;
 
 @Service
@@ -25,6 +24,7 @@ public class OllamaService {
 
     public OllamaService(VectorStore vectorStore) {
         this.vectorStore = vectorStore;
+
         this.restClient = RestClient.builder()
                 .baseUrl("http://localhost:11434")
                 .requestFactory(new JdkClientHttpRequestFactory(
@@ -45,56 +45,68 @@ public class OllamaService {
                         .build()
         );
 
+        results.forEach(document ->
+                System.out.println(
+                        "RAG RESULT | score=" + document.getScore()
+                                + " | " + document.getText()
+                )
+        );
+
         String retrievedContext = results.stream()
                 .map(Document::getText)
                 .collect(Collectors.joining("\n\n"));
 
         String prompt = """
-        You are an expert production reliability engineer.
+                You are an expert production reliability engineer.
 
-        Investigate this production incident.
+                Investigate this production incident.
 
-        CURRENT INCIDENT:
-        Service: %s
-        Error: %s
-        Order ID: %s
-        Status: %s
+                CURRENT INCIDENT:
+                Service: %s
+                Error: %s
+                Order ID: %s
+                Status: %s
+                Stack Trace: %s
+                Logs: %s
+                Kafka Topic: %s
+                Kafka Partition: %s
+                Kafka Offset: %s
 
-        HISTORICAL INCIDENTS RETRIEVED FROM THE KNOWLEDGE BASE:
-        %s
+                HISTORICAL INCIDENTS RETRIEVED FROM THE KNOWLEDGE BASE:
+                %s
 
-        IMPORTANT RULES:
-        1. Treat current incident data as observed facts.
-        2. Treat retrieved historical incidents only as supporting evidence.
-        3. A historical incident can suggest a hypothesis, but it cannot establish the current root cause.
-        4. Never infer a specific mechanism from a generic error message.
-           For example, "database connection timeout" does NOT prove:
-           - connection pool exhaustion
-           - leaked connections
-           - database saturation
-           - network failure
-        5. Only claim a specific root cause when current evidence supports that mechanism.
-        6. If current evidence is insufficient, say:
-           "Root cause cannot be confirmed from the available evidence."
-        7. Clearly separate:
-           - Observed evidence
-           - Historical evidence
-           - Hypothesis
-           - Missing evidence
-        8. Do not invent logs, metrics, traces, payloads, or system behavior.
-        9. Keep the final response concise and operational.
-           Do not explain these rules or repeat the prompt.
+                IMPORTANT RULES:
+                1. Treat current incident data as observed facts.
+                2. Treat retrieved historical incidents only as supporting evidence.
+                3. A historical incident can suggest a hypothesis, but it cannot establish the current root cause.
+                4. Never infer a specific mechanism from a generic error message.
+                   For example, "database connection timeout" does NOT prove:
+                   - connection pool exhaustion
+                   - leaked connections
+                   - database saturation
+                   - network failure
+                5. Only claim a specific root cause when current evidence supports that mechanism.
+                6. If current evidence is insufficient, say:
+                   "Root cause cannot be confirmed from the available evidence."
+                7. Clearly separate:
+                   - Observed evidence
+                   - Historical evidence
+                   - Hypothesis
+                   - Missing evidence
+                8. Do not invent logs, metrics, traces, payloads, or system behavior.
+                9. Keep the final response concise and operational.
+                   Do not explain these rules or repeat the prompt.
 
                 OUTPUT FORMAT:
-                
+
                 Return ONLY valid JSON.
-                
+
                 Do not use markdown.
                 Do not use ``` code fences.
                 Do not add any text before or after the JSON.
-                
+
                 Use exactly this structure:
-                
+
                 {
                   "rootCause": "confirmed root cause or Not confirmed",
                   "hypothesis": "most likely explanation",
@@ -111,11 +123,16 @@ public class OllamaService {
                     "action 3"
                   ]
                 }
-        """.formatted(
+                """.formatted(
                 incident.getService(),
                 incident.getError(),
                 incident.getOrderId(),
                 incident.getStatus(),
+                incident.getStackTrace(),
+                incident.getLogs(),
+                incident.getKafkaTopic(),
+                incident.getKafkaPartition(),
+                incident.getKafkaOffset(),
                 retrievedContext
         );
 
